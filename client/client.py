@@ -6,7 +6,7 @@ import json
 import struct
 import threading
 
-HOST = "192.168.1.10"  # The server's hostname or IP address
+HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
 
 UDP_PORT = 64700  # The port used by the UDP server\

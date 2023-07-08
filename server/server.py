@@ -7,7 +7,7 @@ import threading
 
 lock = threading.Lock()
 
-HOST = "192.168.1.10"  # Standard loopback interface address (localhost)
+HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 TCP_PORT = 8080  # The port used by the TCP server
 
 UDP_PORT = 64700  # The port used by the UDP server  # Port to listen on (non-privileged ports are > 1023)
