@@ -94,8 +94,8 @@ def divide_list(lst):
     divided_lists = [lst[i:i+k] for i in range(0, n, k)]
     return divided_lists[0], divided_lists[1], divided_lists[2], divided_lists[3]
 
-file_path = "files/Catography_Beta_v6.zip"
-list_files_in_folder("files/")
+file_path = "client/uploads/512MB.zip"
+list_files_in_folder("client/uploads/")
 # Get file metadata
 metadata = get_file_metadata(file_path)
 # Convert metadata to JSON
