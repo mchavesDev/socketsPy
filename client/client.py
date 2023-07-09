@@ -92,7 +92,7 @@ def divide_list(lst):
     n = len(lst)
     k = n // 4  # Calculate the size of each sublist, rounding up
     divided_lists = [lst[i:i+k] for i in range(0, n, k)]
-    return divided_lists[0], divided_lists[1], divided_lists[2], divided_lists[3]
+    return divided_lists
 
 file_path = "client/uploads/512MB.zip"
 list_files_in_folder("client/uploads/")
@@ -137,13 +137,13 @@ ack_socket.settimeout(1)
 ack_socket1.settimeout(1)
 ack_socket2.settimeout(1)
 ack_socket3.settimeout(1)
-segments1,segments2,segments3,segments4 = divide_list(segments)
+segmentsArr = divide_list(segments)
 totalPackets = metadata["total_packets"]
 # Create a separate thread for sending segments
-sender_thread = threading.Thread(target=sendSegments, args=(segments1, server_socket, ack_socket, UDP_PORT))
-sender_thread1 = threading.Thread(target=sendSegments, args=(segments2, server_socket1, ack_socket1, UDP_PORT1))
-sender_thread2 = threading.Thread(target=sendSegments, args=(segments3, server_socket2, ack_socket2, UDP_PORT2))
-sender_thread3 = threading.Thread(target=sendSegments, args=(segments4, server_socket3, ack_socket3, UDP_PORT3))
+sender_thread = threading.Thread(target=sendSegments, args=(segmentsArr[0], server_socket, ack_socket, UDP_PORT))
+sender_thread1 = threading.Thread(target=sendSegments, args=(segmentsArr[1], server_socket1, ack_socket1, UDP_PORT1))
+sender_thread2 = threading.Thread(target=sendSegments, args=(segmentsArr[2], server_socket2, ack_socket2, UDP_PORT2))
+sender_thread3 = threading.Thread(target=sendSegments, args=(segmentsArr[3], server_socket3, ack_socket3, UDP_PORT3))
 
 progress_thread = threading.Thread(target=printProgress, args=())
 
