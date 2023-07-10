@@ -6,8 +6,7 @@ import json
 import struct
 import multiprocessing
 from multiprocessing import Pool
-from multiprocessing import set_start_method
-set_start_method("spawn")
+
 
 HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
@@ -67,6 +66,7 @@ def get_file_metadata(file_path):
 
     return metadata
 def sendSegments(args):
+
     segments, server_socket, ack_socket, udp_port, segmentFirst, segmentLast = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
     
