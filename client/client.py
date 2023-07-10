@@ -4,8 +4,7 @@ import socket
 import os
 import json
 import struct
-import threading
-
+import multiprocessing
 HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
 
@@ -63,11 +62,12 @@ def get_file_metadata(file_path):
     }
 
     return metadata
-def sendSegments(segments,server_socket,ack_socket,udp_port):
-    global progress
-    segmentIndex=0
-    while segmentIndex < len(segments):   
-        segment_data = segments[segmentIndex]
+def sendSegments(segments,server_socket,ack_socket,udp_port,segmentFirst,segmentLast):
+    # global progress
+    segmentIndex=segmentFirst
+    index=0
+    while segmentIndex < segmentLast:   
+        segment_data = segments[index]
         segment_header = struct.pack("!IH", segmentIndex, len(segment_data))
         segment_packet = segment_header + segment_data
         server_socket.sendto(segment_packet, (HOST, udp_port))
@@ -77,7 +77,9 @@ def sendSegments(segments,server_socket,ack_socket,udp_port):
             response = ""
         if response == b"ACK":
                 segmentIndex=segmentIndex+1
-                progress = segmentIndex
+                index=index+1
+                # progress = segmentIndex
+                
 def printProgress():
     global progress
     global totalPackets
@@ -93,70 +95,81 @@ def divide_list(lst):
     k = n // 4  # Calculate the size of each sublist, rounding up
     divided_lists = [lst[i:i+k] for i in range(0, n, k)]
     return divided_lists
+if __name__ == '__main__':
+    file_path = "uploads/512MB.zip"
+    list_files_in_folder("uploads/")
+    # Get file metadata
+    metadata = get_file_metadata(file_path)
+    # Convert metadata to JSON
+    metadata_json = json.dumps(metadata)
+    print(metadata_json)
 
-file_path = "client/uploads/512MB.zip"
-list_files_in_folder("client/uploads/")
-# Get file metadata
-metadata = get_file_metadata(file_path)
-# Convert metadata to JSON
-metadata_json = json.dumps(metadata)
-print(metadata_json)
+    # Create a socket
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-# Create a socket
-client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Connect to the server
+    client_socket.connect((HOST, TCP_PORT))
 
-# Connect to the server
-client_socket.connect((HOST, TCP_PORT))
+    # Send the JSON data
+    client_socket.sendall(metadata_json.encode())
 
-# Send the JSON data
-client_socket.sendall(metadata_json.encode())
-
-# Close the socket
-client_socket.close()
-
-# Create a UDP socket
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_socket1 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_socket2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_socket3 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-ack_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-ack_socket1 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-ack_socket2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-ack_socket3 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-ack_socket.bind((HOST, ACK_UDP_PORT))
-ack_socket1.bind((HOST, ACK_UDP_PORT1))
-ack_socket2.bind((HOST, ACK_UDP_PORT2))
-ack_socket3.bind((HOST, ACK_UDP_PORT3))
+    # Close the socket
+    client_socket.close()
 
 
-segments=segment_file(file_path)
-# Receive data from clients
-ack_socket.settimeout(1)
-ack_socket1.settimeout(1)
-ack_socket2.settimeout(1)
-ack_socket3.settimeout(1)
-segmentsArr = divide_list(segments)
-totalPackets = metadata["total_packets"]
-# Create a separate thread for sending segments
-sender_thread = threading.Thread(target=sendSegments, args=(segmentsArr[0], server_socket, ack_socket, UDP_PORT))
-sender_thread1 = threading.Thread(target=sendSegments, args=(segmentsArr[1], server_socket1, ack_socket1, UDP_PORT1))
-sender_thread2 = threading.Thread(target=sendSegments, args=(segmentsArr[2], server_socket2, ack_socket2, UDP_PORT2))
-sender_thread3 = threading.Thread(target=sendSegments, args=(segmentsArr[3], server_socket3, ack_socket3, UDP_PORT3))
+    server_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(4)]
+    ack_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(4)]
 
-progress_thread = threading.Thread(target=printProgress, args=())
+    udp_ports = [UDP_PORT, UDP_PORT1, UDP_PORT2, UDP_PORT3]
+    ack_udp_ports = [ACK_UDP_PORT, ACK_UDP_PORT1, ACK_UDP_PORT2, ACK_UDP_PORT3]
 
-# Start the sender thread
-progress_thread.start()
-sender_thread.start()
-sender_thread1.start()
-sender_thread2.start()
-sender_thread3.start()
+    for i in range(4):
+        ack_sockets[i].bind((HOST, ack_udp_ports[i]))
+        ack_sockets[i].settimeout(1)
+        ack_sockets[i].setblocking(True)
+    segments=segment_file(file_path)
+    # Receive data from clients
+    segmentsArr = divide_list(segments)
+    totalPackets = metadata["total_packets"]
+    # Create a separate thread for sending segments
 
-# Wait for the sender thread to complete (optional)
-sender_thread.join()
-sender_thread1.join()
-sender_thread2.join()
-sender_thread3.join()
-progress_thread.join()
+    division_values = []
+
+    packetPos = 0
+    lastPos = totalPackets // 4
+    division_values.append([packetPos, lastPos])
+
+    packetPos = lastPos + 1
+    lastPos = totalPackets // 4 * 2
+    division_values.append([packetPos, lastPos])
+
+    packetPos = lastPos + 1
+    lastPos = totalPackets // 4 * 3
+    division_values.append([packetPos, lastPos])
+
+    packetPos = lastPos + 1
+    lastPos = totalPackets // 4 * 4 + totalPackets % 4
+    division_values.append([packetPos, lastPos])
+
+    sender_threads = []
+    for i in range(4):
+        segment_thread = multiprocessing.Process(target=sendSegments, args=(segmentsArr[i], server_sockets[i], ack_sockets[i], udp_ports[i],division_values[i][0],division_values[i][1]))
+        sender_threads.append(segment_thread)
+        segment_thread.start()
+
+
+    for process in sender_threads:
+        process.join()
+    # Create the progress thread    
+    # progress_thread = threading.Thread(target=printProgress, args=())
+
+    # Start the progress thread
+    # progress_thread.start()
+
+    # Wait for the progress thread to complete (optional)
+    # progress_thread.join()
+
+    for server_socket in server_sockets:
+        server_socket.close()
+    for ack_socket in ack_sockets:
+        ack_socket.close()
