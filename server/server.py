@@ -6,6 +6,10 @@ import struct
 import multiprocessing
 import os
 from multiprocessing import Pool
+from multiprocessing import set_start_method
+
+set_start_method("spawn")
+
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 TCP_PORT = 8080  # The port used by the TCP server
 
@@ -77,7 +81,7 @@ if __name__ == '__main__':
 
     for i in range(4):
         server_sockets[i].bind((HOST, udp_ports[i]))
-        server_sockets[i].setblocking(True)
+        # server_sockets[i].setblocking(True)
   
     # Create a multiprocessing manager
     manager = multiprocessing.Manager()

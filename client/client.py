@@ -6,6 +6,9 @@ import json
 import struct
 import multiprocessing
 from multiprocessing import Pool
+from multiprocessing import set_start_method
+set_start_method("spawn")
+
 HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
 
