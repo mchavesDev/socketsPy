@@ -5,7 +5,7 @@ import json
 import struct
 import multiprocessing
 import os
-
+from multiprocessing import Pool
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 TCP_PORT = 8080  # The port used by the TCP server
 
@@ -20,9 +20,11 @@ ACK_UDP_PORT2 = 63702  # The port used by the UDP server for sending ack
 ACK_UDP_PORT3 = 63703  # The port used by the UDP server for sending ack
 
 BUFFER = 1506 
-def recievePackets(ack_message,packetPos,lastPos,server_socket,packets,ack_socket,ack_port):
+def recievePackets(args):
+    ack_message, packetPos, lastPos, server_socket, packets, ack_socket, ack_port = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
     while packetPos < lastPos:
+        
         data, address = server_socket.recvfrom(BUFFER)
         
         segment_header = data[:6]  # Extract the fixed-size header (6 bytes)
@@ -30,7 +32,7 @@ def recievePackets(ack_message,packetPos,lastPos,server_socket,packets,ack_socke
         segment_data = data[6:]  # Extract the segment data
         
         packet = {
-            "pos":position,
+            "pos":position, 
             "data":segment_data
         }
         
@@ -40,10 +42,10 @@ def recievePackets(ack_message,packetPos,lastPos,server_socket,packets,ack_socke
             packetPos=packetPos+1
         if packetPos == lastPos:
             print(f"pos {lastPos} achieved on process {os.getpid()}")
-           
+        
             
-        # print(f"packets received {len(packets)}")
-if __name__ == '__main__':   
+            # print(f"packets received {len(packets)}")
+if __name__ == '__main__': 
     # Create a socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -89,24 +91,43 @@ if __name__ == '__main__':
     processes = []
     lastPos = total_packets // 4
     # Receive data from clients using multiprocessing
+    packetPosL = []
+    lastPosL = []
+    
     for i in range(4):
-        packetPos = i * lastPos + 1
+        packetPosL.append(i * lastPos + 1)
         if i == 3:
             lastPos = total_packets
+            lastPosL.append(lastPos)
         else:
             lastPos = (i + 1) * lastPos
-        receiver_process = multiprocessing.Process(target=recievePackets, args=(ack_message,packetPos, lastPos,server_sockets[i], shared_packets, ack_sockets[i], ack_udp_ports[i]))
-        processes.append(receiver_process)
-        receiver_process.start()
+            lastPosL.append(lastPos)
 
+        
+        
+    pool = Pool(processes=4)
+
+    # Create a list of arguments for the recievePackets function
+    args_list = []
+    for i in range(4):
+        args = ("ACK", packetPosL[i], lastPosL[i], server_sockets[i], shared_packets, ack_sockets[i], ack_udp_ports[i])
+        args_list.append(args)
+
+    # Use the pool to map the recievePackets function to the arguments
+    pool.map(recievePackets, args_list)
+
+    # Close the pool
+    pool.close()
+    pool.join()
     for process in processes:
         process.join()
-               
-    reconstructed_data = b''.join([shared_packets[i]["data"] for i in range(total_packets)])
-
-    with open(received_json["filename"], 'wb') as file:
-        file.write(reconstructed_data)
     for server_socket in server_sockets:
         server_socket.close()
     for ack_socket in ack_sockets:
         ack_socket.close()
+                   
+    reconstructed_data = b''.join([shared_packets[i]["data"] for i in range(total_packets)])
+
+    with open(received_json["filename"], 'wb') as file:
+        file.write(reconstructed_data)
+    

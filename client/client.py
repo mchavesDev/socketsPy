@@ -5,6 +5,7 @@ import os
 import json
 import struct
 import multiprocessing
+from multiprocessing import Pool
 HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
 
@@ -62,13 +63,14 @@ def get_file_metadata(file_path):
     }
 
     return metadata
-def sendSegments(segments,server_socket,ack_socket,udp_port,segmentFirst,segmentLast):
-    # global progress
+def sendSegments(args):
+    segments, server_socket, ack_socket, udp_port, segmentFirst, segmentLast = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
     
     segmentIndex=segmentFirst
     index=0
     while segmentIndex < segmentLast:   
+            # Print the process ID    
         segment_data = segments[index]
         segment_header = struct.pack("!IH", segmentIndex, len(segment_data))
         segment_packet = segment_header + segment_data
@@ -81,7 +83,8 @@ def sendSegments(segments,server_socket,ack_socket,udp_port,segmentFirst,segment
                 segmentIndex=segmentIndex+1
                 index=index+1
                 # progress = segmentIndex
-    
+        if segmentIndex==segmentLast:
+            print(f"Process ID: {os.getpid()} has ended sending packets")  # Print the process ID    
                 
 def printProgress():
     global progress
@@ -99,6 +102,7 @@ def divide_list(lst):
     divided_lists = [lst[i:i+k] for i in range(0, n, k)]
     return divided_lists
 if __name__ == '__main__':
+    
     file_path = "uploads/100MB.bin"
     list_files_in_folder("uploads/")
     # Get file metadata
@@ -154,15 +158,20 @@ if __name__ == '__main__':
     lastPos = totalPackets // 4 * 4 + totalPackets % 4
     division_values.append([packetPos, lastPos])
 
-    sender_threads = []
+    pool = Pool(processes=4)
+
+    # Create a list of arguments for the sendSegments function
+    args_list = []
     for i in range(4):
-        segment_thread = multiprocessing.Process(target=sendSegments, args=(segmentsArr[i], server_sockets[i], ack_sockets[i], udp_ports[i],division_values[i][0],division_values[i][1]))
-        sender_threads.append(segment_thread)
-        segment_thread.start()
+        args = (segmentsArr[i], server_sockets[i], ack_sockets[i], udp_ports[i], division_values[i][0], division_values[i][1])
+        args_list.append(args)
 
+    # Use the pool to map the sendSegments function to the arguments
+    pool.map(sendSegments, args_list)
 
-    for process in sender_threads:
-        process.join()
+    # Close the pool
+    pool.close()
+    pool.join()
     # Create the progress thread    
     # progress_thread = threading.Thread(target=printProgress, args=())
 
