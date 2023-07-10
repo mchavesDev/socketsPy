@@ -64,6 +64,8 @@ def get_file_metadata(file_path):
     return metadata
 def sendSegments(segments,server_socket,ack_socket,udp_port,segmentFirst,segmentLast):
     # global progress
+    print(f"Process ID: {os.getpid()}")  # Print the process ID    
+    
     segmentIndex=segmentFirst
     index=0
     while segmentIndex < segmentLast:   
@@ -79,6 +81,7 @@ def sendSegments(segments,server_socket,ack_socket,udp_port,segmentFirst,segment
                 segmentIndex=segmentIndex+1
                 index=index+1
                 # progress = segmentIndex
+    
                 
 def printProgress():
     global progress
@@ -96,7 +99,7 @@ def divide_list(lst):
     divided_lists = [lst[i:i+k] for i in range(0, n, k)]
     return divided_lists
 if __name__ == '__main__':
-    file_path = "uploads/512MB.zip"
+    file_path = "uploads/100MB.bin"
     list_files_in_folder("uploads/")
     # Get file metadata
     metadata = get_file_metadata(file_path)

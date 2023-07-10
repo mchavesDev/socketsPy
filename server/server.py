@@ -4,7 +4,7 @@ import socket
 import json
 import struct
 import multiprocessing
-
+import os
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 TCP_PORT = 8080  # The port used by the TCP server
@@ -19,8 +19,9 @@ ACK_UDP_PORT1 = 63701  # The port used by the UDP server for sending ack
 ACK_UDP_PORT2 = 63702  # The port used by the UDP server for sending ack
 ACK_UDP_PORT3 = 63703  # The port used by the UDP server for sending ack
 
-BUFFER = 1600 #ack_message,packetPos, lastPos, shared_packets, ack_sockets[i], ack_udp_ports[i]
+BUFFER = 1506 
 def recievePackets(ack_message,packetPos,lastPos,server_socket,packets,ack_socket,ack_port):
+    print(f"Process ID: {os.getpid()}")  # Print the process ID    
     while packetPos < lastPos:
         data, address = server_socket.recvfrom(BUFFER)
         
@@ -37,8 +38,11 @@ def recievePackets(ack_message,packetPos,lastPos,server_socket,packets,ack_socke
             packets.append(packet)
             ack_socket.sendto(ack_message.encode(), (HOST, ack_port))
             packetPos=packetPos+1
+        if packetPos == lastPos:
+            print(f"pos {lastPos} achieved on process {os.getpid()}")
+           
             
-        print(f"packets received {len(packets)}")
+        # print(f"packets received {len(packets)}")
 if __name__ == '__main__':   
     # Create a socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
