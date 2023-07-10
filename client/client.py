@@ -19,7 +19,7 @@ ACK_UDP_PORT1 = 63701  # The port used by the UDP server for sending ack
 ACK_UDP_PORT2 = 63702  # The port used by the UDP server for sending ack
 ACK_UDP_PORT3 = 63703  # The port used by the UDP server for sending ack
 
-BUFFER = 512   # Buffer size of file segments
+BUFFER = 1500   # Buffer size of file segments
 progress = 0
 
 def list_files_in_folder(folder_path):

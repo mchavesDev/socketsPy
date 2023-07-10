@@ -20,11 +20,11 @@ ACK_UDP_PORT1 = 63701  # The port used by the UDP server for sending ack
 ACK_UDP_PORT2 = 63702  # The port used by the UDP server for sending ack
 ACK_UDP_PORT3 = 63703  # The port used by the UDP server for sending ack
 
-BUFFER = 512
+BUFFER = 1600
 def recievePackets(packetPos,lastPos,server_socket,packets,ack_socket,ack_port):
     with lock:
         while packetPos < lastPos:
-            data, address = server_socket.recvfrom(600)
+            data, address = server_socket.recvfrom(BUFFER)
             
             segment_header = data[:6]  # Extract the fixed-size header (6 bytes)
             position, segment_size = struct.unpack("!IH", segment_header)
