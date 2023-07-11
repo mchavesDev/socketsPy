@@ -138,6 +138,6 @@ if __name__ == '__main__':
         ack_socket.close()
     print(len(shared_packets))               
     reconstructed_data = b''.join([shared_packets[i]["data"] for i in range(total_packets)])
-    
+
     with open("uploads/"+received_json["filename"], 'wb') as file:
         file.write(reconstructed_data)
