@@ -17,16 +17,17 @@ ACK_UDP_PORT = 63700  # The starting port used by the UDP server for sending ack
 BUFFER = 1600
 
 def recievePackets(args):
-    ack_message, packetPos, lastPos, server_socket, packets, ack_socket, ack_port = args
+    packetPos, lastPos, server_socket, packets, ack_socket, ack_port = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
-    while packetPos < lastPos:
+    while packetPos <= lastPos:
         
         data, address = server_socket.recvfrom(BUFFER)
         
-        segment_header = data[:6]  # Extract the fixed-size header (6 bytes)
-        position, segment_size = struct.unpack("!IH", segment_header)
-        segment_data = data[6:]  # Extract the segment data
-        
+        segment_header = data[:12]  # Extract the fixed-size header (12 bytes)
+        position, epoch = struct.unpack("!IQ", segment_header)
+        segment_data = data[12:]  # Extract the segment data
+        serverTime = int(time.time_ns() // 1000000)
+        medianTime = serverTime-epoch
         packet = {
             "pos":position, 
             "data":segment_data
@@ -34,10 +35,9 @@ def recievePackets(args):
         
         if int(position) == packetPos:
             packets.append(packet)
-            ack_socket.sendto(ack_message.encode(), (HOST, ack_port))
+            ack_socket.sendto(medianTime.to_bytes(8,'big'), (HOST, ack_port))
             packetPos=packetPos+1
         if packetPos == lastPos:
-            packets.append(packet)
             print(f"pos {lastPos} achieved on process {os.getpid()}")
     
             
@@ -71,7 +71,6 @@ if __name__ == '__main__':
     # Create a shared list
     shared_packets = manager.list()
 
-    ack_message = "ACK"
     total_packets = received_json["total_packets"]
     print(total_packets)
     
@@ -90,7 +89,7 @@ if __name__ == '__main__':
     for i in range(num_sockets):
         udp_port = UDP_PORT + i
         server_sockets[i].bind((HOST, udp_port))
-        server_sockets[i].setblocking(True)
+        # server_sockets[i].setblocking(True)
         
 
     # Divide the work among the processes
@@ -107,24 +106,23 @@ if __name__ == '__main__':
     division_values = []
     packetPos = 0
     for i in range(num_cores):
-        lastPos = packetPos + packets_per_core - 1
-        if i < remaining_packets:
-            lastPos += 1
-        division_values.append([packetPos, lastPos])
-        packetPos = lastPos + 1
+        if i == num_cores - 1:
+            lastPos = packetPos + packets_per_core + remaining_packets
+        else:
+            lastPos = packetPos + packets_per_core
+        division_values.append([packetPos, lastPos - 1])
+        packetPos = lastPos
     # Create a pool of processes
     pool = Pool(processes=num_processes)
 
     # Create a list of arguments for the recievePackets function
     args_list = []
     for i in range(num_processes):
-        args = ("ACK", division_values[i][0], division_values[i][1], server_sockets[i], shared_packets, ack_sockets[i], ACK_UDP_PORT + i)
+        args = (division_values[i][0], division_values[i][1], server_sockets[i], shared_packets, ack_sockets[i], ACK_UDP_PORT + i)
         args_list.append(args)
 
     # Use the pool to map the lambda function to the arguments
     pool.map(recievePackets, args_list)
-    # Retrieve the results from the iterator
-    # results = [result for result in results_iter]
 
     # Close the pool
     
@@ -136,8 +134,12 @@ if __name__ == '__main__':
         server_socket.close()
     for ack_socket in ack_sockets:
         ack_socket.close()
-    print(len(shared_packets))               
-    reconstructed_data = b''.join([shared_packets[i]["data"] for i in range(total_packets)])
+                  
+    sorted_packets = sorted(shared_packets, key=lambda packet: packet["pos"])
+    
+    
+    # Reconstruct the data based on the sorted packets
+    reconstructed_data = b''.join(packet["data"] for packet in sorted_packets)
 
     with open("uploads/"+received_json["filename"], 'wb') as file:
         file.write(reconstructed_data)

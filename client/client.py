@@ -7,7 +7,7 @@ import struct
 import multiprocessing
 from multiprocessing import Pool
 import time
-
+from collections import deque
 
 HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
@@ -60,26 +60,34 @@ def get_file_metadata(file_path):
 
     return metadata
 def sendSegments(args):
-
     segments, server_socket, ack_socket, udp_port, segmentFirst, segmentLast = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
-    
-    segmentIndex=segmentFirst
     index=0
-    while segmentIndex < segmentLast:   
-            # Print the process ID    
+    avgTime = 0.5
+    timeS = 0
+    segmentIndex=segmentFirst
+    median = deque(maxlen=10000)
+    while segmentIndex <= segmentLast:   
+        epoch = time.time_ns() // 1000000
         segment_data = segments[index]
-        segment_header = struct.pack("!IH", segmentIndex, len(segment_data))
+        segment_header = struct.pack("!IQ", segmentIndex,epoch)
         segment_packet = segment_header + segment_data
         server_socket.sendto(segment_packet, (HOST, udp_port))
+        ack_socket.settimeout(avgTime)
         try:
-            response, address = ack_socket.recvfrom(128)
+            rtt, address = ack_socket.recvfrom(128)
+            timeS = struct.unpack('!Q', rtt)[0]
+            response = True
         except socket.timeout:
-            response = ""
-        if response == b"ACK":
-                segmentIndex=segmentIndex+1
-                index=index+1
-                # progress = segmentIndex
+            response=False
+        median.append(timeS)
+        avgTime = (sum(median) / len(median))*1.20
+        if avgTime < 0.01:
+            avgTime = 0.01   
+        if response:
+            segmentIndex=segmentIndex+1
+            index=index+1
+            # progress = segmentIndex
         if segmentIndex==segmentLast:
             print(f"Process ID: {os.getpid()} has ended sending packets")  # Print the process ID    
                 
@@ -94,7 +102,7 @@ def printProgress():
         os.system('cls' if os.name == 'nt' else 'clear')
         print(f'Progress: [{bar}] {totalProgress}%')
 def divide_list(lst):
-    num_cores = CORES#multiprocessing.cpu_count()
+    num_cores = CORES
     n = len(lst)
     k = n // num_cores  # Calculate the size of each sublist
     remainder = n % num_cores  # Calculate the remaining items
@@ -102,14 +110,16 @@ def divide_list(lst):
     divided_lists = []
     start = 0
     for i in range(num_cores):
-        sublist_size = k + 1 if i < remainder else k
+        sublist_size = k
+        if i == num_cores - 1:
+            sublist_size += remainder  # Add remaining items to the last sublist
         sublist = lst[start:start+sublist_size]
         divided_lists.append(sublist)
         start += sublist_size
     
     return divided_lists
 if __name__ == '__main__':
-    num_cores = CORES#multiprocessing.cpu_count()
+    num_cores = CORES
 
     file_path = "uploads/512MB.zip"
     list_files_in_folder("uploads/")
@@ -142,7 +152,6 @@ if __name__ == '__main__':
     ack_udp_ports = [ack_udp_port_start + i * port_step for i in range(num_cores)]
     for i in range(num_cores):
         ack_sockets[i].bind((HOST, ack_udp_port_start+i))
-        ack_sockets[i].settimeout(0.5)
         ack_sockets[i].setblocking(True)
     segments=segment_file(file_path)
     # Receive data from clients
@@ -159,19 +168,19 @@ if __name__ == '__main__':
     division_values = []
     packetPos = 0
     for i in range(num_cores):
-        lastPos = packetPos + packets_per_core - 1
-        if i < remaining_packets:
-            lastPos += 1
-        division_values.append([packetPos, lastPos])
-        packetPos = lastPos + 1
-    time.sleep(3)
+        if i == num_cores - 1:
+            lastPos = packetPos + packets_per_core + remaining_packets
+        else:
+            lastPos = packetPos + packets_per_core
+        division_values.append([packetPos, lastPos - 1])
+        packetPos = lastPos
     pool = Pool(processes=num_cores)
     # Create a list of arguments for the sendSegments function
     args_list = []
     for i in range(num_cores):
         args = (segmentsArr[i], server_sockets[i], ack_sockets[i], UDP_PORT+i, division_values[i][0], division_values[i][1])
         args_list.append(args)
-
+    
     # Use the pool to map the sendSegments function to the arguments
     pool.map(sendSegments, args_list)
 
