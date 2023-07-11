@@ -6,22 +6,16 @@ import struct
 import multiprocessing
 import os
 from multiprocessing import Pool
-
+import time
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 TCP_PORT = 8080  # The port used by the TCP server
+UDP_PORT = 64700  # The starting port used by the UDP server
+CORES = multiprocessing.cpu_count()
 
-UDP_PORT = 64700  # The port used by the UDP server  # Port to listen on (non-privileged ports are > 1023)
-UDP_PORT1 = 64701  # The port used by the UDP server  # Port to listen on (non-privileged ports are > 1023)
-UDP_PORT2 = 64702  # The port used by the UDP server  # Port to listen on (non-privileged ports are > 1023)
-UDP_PORT3 = 64703  # The port used by the UDP server  # Port to listen on (non-privileged ports are > 1023)
+ACK_UDP_PORT = 63700  # The starting port used by the UDP server for sending ack
+BUFFER = 1600
 
-ACK_UDP_PORT = 63700  # The port used by the UDP server for sending ack
-ACK_UDP_PORT1 = 63701  # The port used by the UDP server for sending ack
-ACK_UDP_PORT2 = 63702  # The port used by the UDP server for sending ack
-ACK_UDP_PORT3 = 63703  # The port used by the UDP server for sending ack
-
-BUFFER = 1506 
 def recievePackets(args):
     ack_message, packetPos, lastPos, server_socket, packets, ack_socket, ack_port = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
@@ -43,22 +37,23 @@ def recievePackets(args):
             ack_socket.sendto(ack_message.encode(), (HOST, ack_port))
             packetPos=packetPos+1
         if packetPos == lastPos:
+            packets.append(packet)
             print(f"pos {lastPos} achieved on process {os.getpid()}")
-        
+    
             
             # print(f"packets received {len(packets)}")
 if __name__ == '__main__': 
     # Create a socket
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # Bind the socket to a host and port
-    server_socket.bind((HOST, TCP_PORT))
+    tcp_server_socket.bind((HOST, TCP_PORT))
 
     # Listen for incoming connections
-    server_socket.listen()
+    tcp_server_socket.listen()
 
     # Accept a client connection
-    client_socket, address = server_socket.accept()
+    client_socket, address = tcp_server_socket.accept()
 
     # Receive the JSON data
     received_data = client_socket.recv(1024).decode()
@@ -68,68 +63,81 @@ if __name__ == '__main__':
 
     # Close the sockets
     client_socket.close()
-    server_socket.close()
+    tcp_server_socket.close()
 
-    # Create a socket
-    server_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(4)]
-    ack_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(4)]
-
-    udp_ports = [UDP_PORT, UDP_PORT1, UDP_PORT2, UDP_PORT3]
-    ack_udp_ports = [ACK_UDP_PORT, ACK_UDP_PORT1, ACK_UDP_PORT2, ACK_UDP_PORT3]
-
-    for i in range(4):
-        server_sockets[i].bind((HOST, udp_ports[i]))
-        # server_sockets[i].setblocking(True)
-  
     # Create a multiprocessing manager
     manager = multiprocessing.Manager()
 
     # Create a shared list
     shared_packets = manager.list()
-    
+
     ack_message = "ACK"
     total_packets = received_json["total_packets"]
     print(total_packets)
-    processes = []
-    lastPos = total_packets // 4
-    # Receive data from clients using multiprocessing
+    
+    # Get the number of CPU cores
+    num_cores = CORES#multiprocessing.cpu_count()
+
+    # Calculate the number of processes and sockets based on the number of CPU cores
+    num_processes = num_cores
+    num_sockets = num_cores
+    
+    # Create server_sockets and ack_sockets lists dynamically
+    server_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(num_sockets)]
+    ack_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(num_sockets)]
+
+    # Bind server_sockets and setblocking
+    for i in range(num_sockets):
+        udp_port = UDP_PORT + i
+        server_sockets[i].bind((HOST, udp_port))
+        server_sockets[i].setblocking(True)
+        
+
+    # Divide the work among the processes
     packetPosL = []
     lastPosL = []
     
-    for i in range(4):
-        packetPosL.append(i * lastPos + 1)
-        if i == 3:
-            lastPos = total_packets
-            lastPosL.append(lastPos)
-        else:
-            lastPos = (i + 1) * lastPos
-            lastPosL.append(lastPos)
+   # Calculate the number of packets per core
+    packets_per_core = total_packets // num_cores
 
-        
-        
-    pool = Pool(processes=4)
+    # Calculate the remaining packets
+    remaining_packets = total_packets % num_cores
+
+    # Create division values based on the number of cores
+    division_values = []
+    packetPos = 0
+    for i in range(num_cores):
+        lastPos = packetPos + packets_per_core - 1
+        if i < remaining_packets:
+            lastPos += 1
+        division_values.append([packetPos, lastPos])
+        packetPos = lastPos + 1
+    # Create a pool of processes
+    pool = Pool(processes=num_processes)
 
     # Create a list of arguments for the recievePackets function
     args_list = []
-    for i in range(4):
-        args = ("ACK", packetPosL[i], lastPosL[i], server_sockets[i], shared_packets, ack_sockets[i], ack_udp_ports[i])
+    for i in range(num_processes):
+        args = ("ACK", division_values[i][0], division_values[i][1], server_sockets[i], shared_packets, ack_sockets[i], ACK_UDP_PORT + i)
         args_list.append(args)
 
-    # Use the pool to map the recievePackets function to the arguments
+    # Use the pool to map the lambda function to the arguments
     pool.map(recievePackets, args_list)
+    # Retrieve the results from the iterator
+    # results = [result for result in results_iter]
 
     # Close the pool
+    
     pool.close()
     pool.join()
-    for process in processes:
-        process.join()
+    
+    # Close the server_sockets and ack_sockets
     for server_socket in server_sockets:
         server_socket.close()
     for ack_socket in ack_sockets:
         ack_socket.close()
-                   
+    print(len(shared_packets))               
     reconstructed_data = b''.join([shared_packets[i]["data"] for i in range(total_packets)])
-
-    with open(received_json["filename"], 'wb') as file:
-        file.write(reconstructed_data)
     
+    with open("uploads/"+received_json["filename"], 'wb') as file:
+        file.write(reconstructed_data)

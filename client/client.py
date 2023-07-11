@@ -6,21 +6,15 @@ import json
 import struct
 import multiprocessing
 from multiprocessing import Pool
+import time
 
 
 HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
 
 UDP_PORT = 64700  # The port used by the UDP server\
-UDP_PORT1 = 64701  # The port used by the UDP server  # Port to listen on (non-privileged ports are > 1023)
-UDP_PORT2 = 64702  # The port used by the UDP server  # Port to listen on (non-privileged ports are > 1023)
-UDP_PORT3 = 64703  # The port used by the UDP server  # Port to listen on (non-privileged ports are > 1023)
-
 ACK_UDP_PORT = 63700  # The port used by the UDP server for sending ack
-ACK_UDP_PORT1 = 63701  # The port used by the UDP server for sending ack
-ACK_UDP_PORT2 = 63702  # The port used by the UDP server for sending ack
-ACK_UDP_PORT3 = 63703  # The port used by the UDP server for sending ack
-
+CORES = multiprocessing.cpu_count()
 BUFFER = 1500   # Buffer size of file segments
 progress = 0
 
@@ -100,13 +94,24 @@ def printProgress():
         os.system('cls' if os.name == 'nt' else 'clear')
         print(f'Progress: [{bar}] {totalProgress}%')
 def divide_list(lst):
+    num_cores = CORES#multiprocessing.cpu_count()
     n = len(lst)
-    k = n // 4  # Calculate the size of each sublist, rounding up
-    divided_lists = [lst[i:i+k] for i in range(0, n, k)]
+    k = n // num_cores  # Calculate the size of each sublist
+    remainder = n % num_cores  # Calculate the remaining items
+    
+    divided_lists = []
+    start = 0
+    for i in range(num_cores):
+        sublist_size = k + 1 if i < remainder else k
+        sublist = lst[start:start+sublist_size]
+        divided_lists.append(sublist)
+        start += sublist_size
+    
     return divided_lists
 if __name__ == '__main__':
-    
-    file_path = "uploads/100MB.bin"
+    num_cores = CORES#multiprocessing.cpu_count()
+
+    file_path = "uploads/512MB.zip"
     list_files_in_folder("uploads/")
     # Get file metadata
     metadata = get_file_metadata(file_path)
@@ -126,47 +131,45 @@ if __name__ == '__main__':
     # Close the socket
     client_socket.close()
 
+    
+    server_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(num_cores)]
+    ack_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(num_cores)]
 
-    server_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(4)]
-    ack_sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(4)]
-
-    udp_ports = [UDP_PORT, UDP_PORT1, UDP_PORT2, UDP_PORT3]
-    ack_udp_ports = [ACK_UDP_PORT, ACK_UDP_PORT1, ACK_UDP_PORT2, ACK_UDP_PORT3]
-
-    for i in range(4):
-        ack_sockets[i].bind((HOST, ack_udp_ports[i]))
-        ack_sockets[i].settimeout(1)
+   
+    port_step = 1
+    ack_udp_port_start = ACK_UDP_PORT
+    # Generate the ack_udp_ports list
+    ack_udp_ports = [ack_udp_port_start + i * port_step for i in range(num_cores)]
+    for i in range(num_cores):
+        ack_sockets[i].bind((HOST, ack_udp_port_start+i))
+        ack_sockets[i].settimeout(0.5)
         ack_sockets[i].setblocking(True)
     segments=segment_file(file_path)
     # Receive data from clients
     segmentsArr = divide_list(segments)
     totalPackets = metadata["total_packets"]
-    # Create a separate thread for sending segments
+   
+    # Calculate the number of packets per core
+    packets_per_core = totalPackets // num_cores
 
+    # Calculate the remaining packets
+    remaining_packets = totalPackets % num_cores
+
+    # Create division values based on the number of cores
     division_values = []
-
     packetPos = 0
-    lastPos = totalPackets // 4
-    division_values.append([packetPos, lastPos])
-
-    packetPos = lastPos + 1
-    lastPos = totalPackets // 4 * 2
-    division_values.append([packetPos, lastPos])
-
-    packetPos = lastPos + 1
-    lastPos = totalPackets // 4 * 3
-    division_values.append([packetPos, lastPos])
-
-    packetPos = lastPos + 1
-    lastPos = totalPackets // 4 * 4 + totalPackets % 4
-    division_values.append([packetPos, lastPos])
-
-    pool = Pool(processes=4)
-
+    for i in range(num_cores):
+        lastPos = packetPos + packets_per_core - 1
+        if i < remaining_packets:
+            lastPos += 1
+        division_values.append([packetPos, lastPos])
+        packetPos = lastPos + 1
+    time.sleep(3)
+    pool = Pool(processes=num_cores)
     # Create a list of arguments for the sendSegments function
     args_list = []
-    for i in range(4):
-        args = (segmentsArr[i], server_sockets[i], ack_sockets[i], udp_ports[i], division_values[i][0], division_values[i][1])
+    for i in range(num_cores):
+        args = (segmentsArr[i], server_sockets[i], ack_sockets[i], UDP_PORT+i, division_values[i][0], division_values[i][1])
         args_list.append(args)
 
     # Use the pool to map the sendSegments function to the arguments
@@ -175,14 +178,6 @@ if __name__ == '__main__':
     # Close the pool
     pool.close()
     pool.join()
-    # Create the progress thread    
-    # progress_thread = threading.Thread(target=printProgress, args=())
-
-    # Start the progress thread
-    # progress_thread.start()
-
-    # Wait for the progress thread to complete (optional)
-    # progress_thread.join()
 
     for server_socket in server_sockets:
         server_socket.close()
