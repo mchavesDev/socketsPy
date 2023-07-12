@@ -82,8 +82,8 @@ def sendSegments(args):
             response=False
         median.append(timeS)
         avgTime = (sum(median) / len(median))*1.20
-        if avgTime < 0.01:
-            avgTime = 0.01   
+        if avgTime < 0.001:
+            avgTime = 0.001   
         if response:
             segmentIndex=segmentIndex+1
             index=index+1

@@ -26,8 +26,6 @@ def recievePackets(args):
         segment_header = data[:12]  # Extract the fixed-size header (12 bytes)
         position, epoch = struct.unpack("!IQ", segment_header)
         segment_data = data[12:]  # Extract the segment data
-        serverTime = int(time.time_ns() // 1000000)
-        medianTime = serverTime-epoch
         packet = {
             "pos":position, 
             "data":segment_data
@@ -35,6 +33,8 @@ def recievePackets(args):
         
         if int(position) == packetPos:
             packets.append(packet)
+            serverTime = int(time.time_ns() // 1000000)
+            medianTime = serverTime-epoch
             ack_socket.sendto(medianTime.to_bytes(8,'big'), (HOST, ack_port))
             packetPos=packetPos+1
         if packetPos == lastPos:
