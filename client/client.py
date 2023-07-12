@@ -8,6 +8,8 @@ import multiprocessing
 from multiprocessing import Pool
 import time
 from collections import deque
+import threading
+import concurrent.futures
 
 HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
@@ -16,13 +18,11 @@ UDP_PORT = 64700  # The port used by the UDP server\
 ACK_UDP_PORT = 63700  # The port used by the UDP server for sending ack
 CORES = multiprocessing.cpu_count()
 BUFFER = 1500   # Buffer size of file segments
-progress = 0
 
 def list_files_in_folder(folder_path):
     files = os.listdir(folder_path)
     for file in files:
         print(file)
-
 
 # Function to segment the file we will send after to server.
 def segment_file(file_path):
@@ -57,8 +57,8 @@ def get_file_metadata(file_path):
         "created_at": created_at,
         "modified_at": modified_at
     }
-
     return metadata
+
 def sendSegments(args):
     segments, server_socket, ack_socket, udp_port, segmentFirst, segmentLast = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
@@ -87,26 +87,26 @@ def sendSegments(args):
         if response:
             segmentIndex=segmentIndex+1
             index=index+1
-            # progress = segmentIndex
+            with sharedProgress.get_lock():        
+                sharedProgress.value = sharedProgress.value + 1
         if segmentIndex==segmentLast:
             print(f"Process ID: {os.getpid()} has ended sending packets")  # Print the process ID    
-                
-def printProgress():
-    global progress
-    global totalPackets
+
+def printProgress(totalPackets,sharedProgress):
     bar_length = 100  # Length of the progress bar
-    while progress < totalPackets:
-        totalProgress = round((progress / totalPackets) * 100,1)
+    while sharedProgress.value < totalPackets:
+        totalProgress = round((sharedProgress.value / totalPackets) * 100,1)
         filled_length = int(bar_length * totalProgress / 100)
         bar = '█' * filled_length + '-' * (bar_length - filled_length)
         os.system('cls' if os.name == 'nt' else 'clear')
         print(f'Progress: [{bar}] {totalProgress}%')
+
 def divide_list(lst):
     num_cores = CORES
     n = len(lst)
     k = n // num_cores  # Calculate the size of each sublist
     remainder = n % num_cores  # Calculate the remaining items
-    
+
     divided_lists = []
     start = 0
     for i in range(num_cores):
@@ -116,9 +116,13 @@ def divide_list(lst):
         sublist = lst[start:start+sublist_size]
         divided_lists.append(sublist)
         start += sublist_size
-    
+
     return divided_lists
+def init_shared_progress(progress):
+    global sharedProgress
+    sharedProgress = progress
 if __name__ == '__main__':
+    sharedProgress = multiprocessing.Value('i', 0)
     num_cores = CORES
 
     file_path = "uploads/512MB.zip"
@@ -174,7 +178,7 @@ if __name__ == '__main__':
             lastPos = packetPos + packets_per_core
         division_values.append([packetPos, lastPos - 1])
         packetPos = lastPos
-    pool = Pool(processes=num_cores)
+    pool = multiprocessing.Pool(processes=num_cores, initializer=init_shared_progress, initargs=(sharedProgress,))
     # Create a list of arguments for the sendSegments function
     args_list = []
     for i in range(num_cores):
@@ -182,12 +186,22 @@ if __name__ == '__main__':
         args_list.append(args)
     
     # Use the pool to map the sendSegments function to the arguments
-    pool.map(sendSegments, args_list)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Submit the pool.map() function to the executor in a separate thread
+        future = executor.submit(pool.map, sendSegments, args_list)
 
-    # Close the pool
+        # Start the progress tracking thread
+        thread = threading.Thread(target=printProgress, args=(totalPackets, sharedProgress))
+        thread.start()
+
+        # Wait for the pool.map() function to complete
+        future.result()
+
+        # Join the thread
+        thread.join()
     pool.close()
     pool.join()
-
+    
     for server_socket in server_sockets:
         server_socket.close()
     for ack_socket in ack_sockets:
