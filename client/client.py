@@ -11,6 +11,7 @@ from collections import deque
 import threading
 import concurrent.futures
 
+
 HOST = "127.0.0.1"  # The server's hostname or IP address
 TCP_PORT = 8080  # The port used by the TCP server
 

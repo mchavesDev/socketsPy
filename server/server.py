@@ -7,6 +7,7 @@ import multiprocessing
 import os
 from multiprocessing import Pool
 import time
+import fcntl
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 TCP_PORT = 8080  # The port used by the TCP server
@@ -17,7 +18,7 @@ ACK_UDP_PORT = 63700  # The starting port used by the UDP server for sending ack
 BUFFER = 1600
 
 def recievePackets(args):
-    packetPos, lastPos, server_socket, packets, ack_socket, ack_port = args
+    packetPos, lastPos, server_socket, ack_socket, ack_port ,filePath = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
     while packetPos <= lastPos:
         
@@ -26,13 +27,25 @@ def recievePackets(args):
         segment_header = data[:12]  # Extract the fixed-size header (12 bytes)
         position, epoch = struct.unpack("!IQ", segment_header)
         segment_data = data[12:]  # Extract the segment data
-        packet = {
-            "pos":position, 
-            "data":segment_data
-        }
         
         if int(position) == packetPos:
-            packets.append(packet)
+            
+            with open(filePath, "wb+") as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                # Calculate the position to seek to based on the segment size and index
+                size = len(data) - 12 #Fixed header byte size is 12
+                index = size * position
+                # Move the file pointer to the desired position
+                f.seek(index)
+
+                # Write data to the allocated segment
+                data = segment_data
+                f.write(data)
+                # Release the lock on the file
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+                # fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            # packets.append(packet)
             serverTime = int(time.time_ns() // 1000000)
             medianTime = serverTime-epoch
             ack_socket.sendto(medianTime.to_bytes(8,'big'), (HOST, ack_port))
@@ -66,17 +79,18 @@ if __name__ == '__main__':
     tcp_server_socket.close()
 
     # Create a multiprocessing manager
-    manager = multiprocessing.Manager()
+    
 
-    # Create a shared list
-    shared_packets = manager.list()
-
+    with open("uploads/"+received_json["filename"], 'wb') as file:
+        file.seek(received_json["size"]-1)
+        file.write(b'0')
+    file_path="uploads/"+received_json["filename"]
     total_packets = received_json["total_packets"]
     print(total_packets)
     
     # Get the number of CPU cores
     num_cores = CORES#multiprocessing.cpu_count()
-
+          
     # Calculate the number of processes and sockets based on the number of CPU cores
     num_processes = num_cores
     num_sockets = num_cores
@@ -118,7 +132,7 @@ if __name__ == '__main__':
     # Create a list of arguments for the recievePackets function
     args_list = []
     for i in range(num_processes):
-        args = (division_values[i][0], division_values[i][1], server_sockets[i], shared_packets, ack_sockets[i], ACK_UDP_PORT + i)
+        args = (division_values[i][0], division_values[i][1], server_sockets[i], ack_sockets[i], ACK_UDP_PORT + i, file_path)
         args_list.append(args)
 
     # Use the pool to map the lambda function to the arguments
@@ -134,12 +148,3 @@ if __name__ == '__main__':
         server_socket.close()
     for ack_socket in ack_sockets:
         ack_socket.close()
-                  
-    sorted_packets = sorted(shared_packets, key=lambda packet: packet["pos"])
-    
-    
-    # Reconstruct the data based on the sorted packets
-    reconstructed_data = b''.join(packet["data"] for packet in sorted_packets)
-
-    with open("uploads/"+received_json["filename"], 'wb') as file:
-        file.write(reconstructed_data)
