@@ -83,8 +83,8 @@ def sendSegments(args):
             response=False
         median.append(timeS)
         avgTime = (sum(median) / len(median))*1.20
-        if avgTime < 0.001:
-            avgTime = 0.001   
+        if avgTime < 0.0001:
+            avgTime = 0.0001   
         if response:
             segmentIndex=segmentIndex+1
             index=index+1
@@ -126,7 +126,7 @@ if __name__ == '__main__':
     sharedProgress = multiprocessing.Value('i', 0)
     num_cores = CORES
 
-    file_path = "uploads/512MB.zip"
+    file_path = "uploads/lucy-cp.jpg"
     list_files_in_folder("uploads/")
     # Get file metadata
     metadata = get_file_metadata(file_path)

@@ -20,6 +20,7 @@ BUFFER = 1600
 def recievePackets(args):
     packetPos, lastPos, server_socket, ack_socket, ack_port ,filePath = args
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
+    file_lock = multiprocessing.Lock()
     while packetPos <= lastPos:
         
         data, address = server_socket.recvfrom(BUFFER)
@@ -30,22 +31,19 @@ def recievePackets(args):
         
         if int(position) == packetPos:
             
-            with open(filePath, "wb+") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                # Calculate the position to seek to based on the segment size and index
-                size = len(data) - 12 #Fixed header byte size is 12
-                index = size * position
-                # Move the file pointer to the desired position
-                f.seek(index)
-
-                # Write data to the allocated segment
-                data = segment_data
-                f.write(data)
-                # Release the lock on the file
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-
-                # fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            # packets.append(packet)
+            with open(filePath, "r+b") as f:
+                with file_lock:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    # Calculate the position to seek to based on the segment size and index
+                    size = len(segment_data) # Fixed header byte size is 12
+                    index = size * position
+                    # Move the file pointer to the desired position
+                    f.seek(index)
+                    # Write data to the allocated segment
+                    f.write(segment_data)
+                    # Release the lock on the file
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                
             serverTime = int(time.time_ns() // 1000000)
             medianTime = serverTime-epoch
             ack_socket.sendto(medianTime.to_bytes(8,'big'), (HOST, ack_port))
