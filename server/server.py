@@ -28,21 +28,21 @@ def recievePackets(args):
         segment_header = data[:12]  # Extract the fixed-size header (12 bytes)
         position, epoch = struct.unpack("!IQ", segment_header)
         segment_data = data[12:]  # Extract the segment data
-        
-        if int(position) == packetPos:
-            
+        packet = {
+            "pos":position, 
+            "data":segment_data
+        }
+        if int(position) == packetPos or int(position) == lastPos:
+            # sharedPackets.append(packet)
             with open(filePath, "r+b") as f:
                 with file_lock:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                     # Calculate the position to seek to based on the segment size and index
-                    size = len(segment_data) # Fixed header byte size is 12
-                    index = size * position
+                    index = 1500 * packet['pos']
                     # Move the file pointer to the desired position
+                    # if(index == 0 or index == len(packets_list)-1):
                     f.seek(index)
                     # Write data to the allocated segment
-                    f.write(segment_data)
-                    # Release the lock on the file
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    f.write(packet['data'])
                 
             serverTime = int(time.time_ns() // 1000000)
             medianTime = serverTime-epoch
@@ -101,8 +101,6 @@ if __name__ == '__main__':
     for i in range(num_sockets):
         udp_port = UDP_PORT + i
         server_sockets[i].bind((HOST, udp_port))
-        # server_sockets[i].setblocking(True)
-        
 
     # Divide the work among the processes
     packetPosL = []
@@ -130,7 +128,7 @@ if __name__ == '__main__':
     # Create a list of arguments for the recievePackets function
     args_list = []
     for i in range(num_processes):
-        args = (division_values[i][0], division_values[i][1], server_sockets[i], ack_sockets[i], ACK_UDP_PORT + i, file_path)
+        args = (division_values[i][0], division_values[i][1], server_sockets[i], ack_sockets[i], ACK_UDP_PORT + i, file_path,)
         args_list.append(args)
 
     # Use the pool to map the lambda function to the arguments
