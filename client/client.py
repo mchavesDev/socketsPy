@@ -61,7 +61,9 @@ def get_file_metadata(file_path):
     return metadata
 
 def sendSegments(args):
-    segments, server_socket, ack_socket, udp_port, segmentFirst, segmentLast = args
+    lastPacketPos, last_packet_size,file_path, server_socket, ack_socket, udp_port, segmentFirst, segmentLast = args
+    file_lock = multiprocessing.Lock()
+    
     print(f"Process ID: {os.getpid()}")  # Print the process ID    
     index=0
     avgTime = 0.5
@@ -70,7 +72,18 @@ def sendSegments(args):
     median = deque(maxlen=10000)
     while segmentIndex <= segmentLast:   
         epoch = time.time_ns() // 1000000
-        segment_data = segments[index]
+        with open(file_path, "r+b") as f:
+            with file_lock:
+                # Calculate the position to seek to based on the segment size and index
+                index = 1500 * segmentIndex
+                # Move the file pointer to the desired position
+                f.seek(index)
+                # Write data to the allocated segment
+                if(segmentIndex == lastPacketPos):
+                    segment_data=f.read(last_packet_size)
+                else:
+                    segment_data=f.read(1500)
+                
         segment_header = struct.pack("!IQ", segmentIndex,epoch)
         segment_packet = segment_header + segment_data
         server_socket.sendto(segment_packet, (HOST, udp_port))
@@ -126,7 +139,7 @@ if __name__ == '__main__':
     sharedProgress = multiprocessing.Value('i', 0)
     num_cores = CORES
 
-    file_path = "uploads/lucy-cp.jpg"
+    file_path = "uploads/Girl Who Leapt Through Time.mkv"
     list_files_in_folder("uploads/")
     # Get file metadata
     metadata = get_file_metadata(file_path)
@@ -158,11 +171,11 @@ if __name__ == '__main__':
     for i in range(num_cores):
         ack_sockets[i].bind((HOST, ack_udp_port_start+i))
         ack_sockets[i].setblocking(True)
-    segments=segment_file(file_path)
+    # segments=segment_file(file_path)
     # Receive data from clients
-    segmentsArr = divide_list(segments)
+    #segmentsArr = divide_list(segments)
     totalPackets = metadata["total_packets"]
-   
+    lastPacketSize=metadata["last_packet"]
     # Calculate the number of packets per core
     packets_per_core = totalPackets // num_cores
 
@@ -182,8 +195,9 @@ if __name__ == '__main__':
     pool = multiprocessing.Pool(processes=num_cores, initializer=init_shared_progress, initargs=(sharedProgress,))
     # Create a list of arguments for the sendSegments function
     args_list = []
+    
     for i in range(num_cores):
-        args = (segmentsArr[i], server_sockets[i], ack_sockets[i], UDP_PORT+i, division_values[i][0], division_values[i][1])
+        args = (totalPackets,lastPacketSize,file_path, server_sockets[i], ack_sockets[i], UDP_PORT+i, division_values[i][0], division_values[i][1])
         args_list.append(args)
     
     # Use the pool to map the sendSegments function to the arguments

@@ -7,7 +7,6 @@ import multiprocessing
 import os
 from multiprocessing import Pool
 import time
-import fcntl
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 TCP_PORT = 8080  # The port used by the TCP server
@@ -39,7 +38,6 @@ def recievePackets(args):
                     # Calculate the position to seek to based on the segment size and index
                     index = 1500 * packet['pos']
                     # Move the file pointer to the desired position
-                    # if(index == 0 or index == len(packets_list)-1):
                     f.seek(index)
                     # Write data to the allocated segment
                     f.write(packet['data'])
@@ -52,7 +50,6 @@ def recievePackets(args):
             print(f"pos {lastPos} achieved on process {os.getpid()}")
     
             
-            # print(f"packets received {len(packets)}")
 if __name__ == '__main__': 
     # Create a socket
     tcp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
