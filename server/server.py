@@ -11,10 +11,10 @@ import time
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 TCP_PORT = 8080  # The port used by the TCP server
 UDP_PORT = 64700  # The starting port used by the UDP server
-CORES = multiprocessing.cpu_count()
+CORES = multiprocessing.cpu_count()*2
 
 ACK_UDP_PORT = 63700  # The starting port used by the UDP server for sending ack
-BUFFER = 1600
+BUFFER = 2600
 
 def recievePackets(args):
     packetPos, lastPos, server_socket, ack_socket, ack_port ,filePath = args
@@ -36,7 +36,7 @@ def recievePackets(args):
             with open(filePath, "r+b") as f:
                 with file_lock:
                     # Calculate the position to seek to based on the segment size and index
-                    index = 1500 * packet['pos']
+                    index = 2500 * packet['pos']
                     # Move the file pointer to the desired position
                     f.seek(index)
                     # Write data to the allocated segment

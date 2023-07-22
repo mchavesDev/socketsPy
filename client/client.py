@@ -17,8 +17,8 @@ TCP_PORT = 8080  # The port used by the TCP server
 
 UDP_PORT = 64700  # The port used by the UDP server\
 ACK_UDP_PORT = 63700  # The port used by the UDP server for sending ack
-CORES = multiprocessing.cpu_count()
-BUFFER = 1500   # Buffer size of file segments
+CORES =     multiprocessing.cpu_count()*2
+BUFFER = 2500   # Buffer size of file segments
 
 def list_files_in_folder(folder_path):
     files = os.listdir(folder_path)
@@ -96,8 +96,8 @@ def sendSegments(args):
             response=False
         median.append(timeS)
         avgTime = (sum(median) / len(median))*1.20
-        if avgTime < 0.0001:
-            avgTime = 0.0001   
+        if avgTime < 0.000001:
+            avgTime = 0.000001   
         if response:
             segmentIndex=segmentIndex+1
             index=index+1
@@ -139,7 +139,7 @@ if __name__ == '__main__':
     sharedProgress = multiprocessing.Value('i', 0)
     num_cores = CORES
 
-    file_path = "uploads/Girl Who Leapt Through Time.mkv"
+    file_path = "uploads/Apex.Point.Build.11534915.zip"
     list_files_in_folder("uploads/")
     # Get file metadata
     metadata = get_file_metadata(file_path)
